@@ -8,85 +8,80 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+void main() {
+  runApp(MaterialApp(
+    home: BluetoothSearchScreen(),
+    theme: ThemeData(
+      primaryColor: Colors.yellow, // 앱 테마 색상 변경
+      textTheme: TextTheme(
+        bodyLarge: TextStyle(color: Colors.black), // 텍스트의 기본색 변경
+      ),
+    ),
+  ));
+}
+
 class BluetoothSearchScreen extends StatefulWidget {
-  // 스테이트풀 상속.
   @override
-  // createState() 메서드가 StatefulWidget의 createState() 메서드를 재정의
   _BluetoothSearchScreenState createState() => _BluetoothSearchScreenState();
-//   다트에서 _ (언더바) 는 private 제어자를 말함.
 }
 
 class _BluetoothSearchScreenState extends State<BluetoothSearchScreen> {
-  // 그리고 스테이트풀 특성상 아래에서 이런 형태로 상수, 변수 정의
+  
+  //BluetoochState는 총 5개의 state를 갖고 있다.
+  //BluetoothState.UNKNOWN: 블루투스 상태를 알 수 없다
+  //BluetoothState.STATE_OFF: 블루투스가 꺼져 있다
+  //BluetoothState.STATE_ON: 블루투스가 켜져 있다
+  //BluetoothState.STATE_TURNING_ON: 블루투스가 켜지고 있다
+  //BluetoothState.STATE_TURNING_OFF: 블루투스가 꺼지고 있다
   BluetoothState _bluetoothState = BluetoothState.UNKNOWN;
-  // enum 값 중 unknown
   List<BluetoothDevice> _devicesList = [];
   bool _isLoading = false;
-  BluetoothConnection? _connection;
-  // 타입?  nullable 타입을 나타냄.
-
-
-
+  BluetoothConnection? _connection; // 타입?  nullable 타입을 나타냄.
+  
   @override
-  void initState() {
-    // 오버라이드로 스테이트풀 위젯 생성시 한 번 실행. 초기화 함수
+  void initState() { //StatefulWidget 생성시 한 번 실행되는 초기화 함수
     super.initState();
     _initBluetooth();
   }
 
-  /*
+  //권한 확인 (스캔, 연결, 위치)
+  Future<void> _requestPermissions() async {
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.locationWhenInUse, // 위치 권한도 필요
+    ].request();
+
+    if (statuses[Permission.bluetoothScan] != PermissionStatus.granted ||
+        statuses[Permission.bluetoothConnect] != PermissionStatus.granted ||
+        statuses[Permission.locationWhenInUse] != PermissionStatus.granted) {
+      // 권한이 거부되었을 때 처리
+      throw Exception('필수 권한이 허용되지 않았습니다.');
+    }
+  }
+
   void _initBluetooth() async {
-    // 함수 뒤 async는 비동기적으로 처리.(병렬)
-    // 그 결과를 기다리는 값들은 await로 기다림
+    //async로 비동기 처리
+    //결과를 기다리는 값들은 await로 비동기 처리
+
+    //권한 확인
+    await _requestPermissions();
+
+    //스마트폰에서 현재 블루투스의 상태를 가져온다. (상태들은 위에 설명해놓음)
     _bluetoothState = await FlutterBluetoothSerial.instance.state;
 
+    //블루투스가 꺼져있으면 켜도록 요청한다.
     if (_bluetoothState == BluetoothState.STATE_OFF) {
       await FlutterBluetoothSerial.instance.requestEnable();
     }
-
+  
     await _getBondedDevices();
   }
-  */
 
-  /////////////////////////////////////////////////////////////////////////////////////
-  /////////////////////////////////////////////////////////////////////////////////////
-  /////////////////////////////////////////////////////////////////////////////////////
-  Future<void> _requestPermissions() async {
-  Map<Permission, PermissionStatus> statuses = await [
-    Permission.bluetoothScan,
-    Permission.bluetoothConnect,
-    Permission.locationWhenInUse, // 위치 권한도 필요
-  ].request();
-
-  if (statuses[Permission.bluetoothScan] != PermissionStatus.granted ||
-      statuses[Permission.bluetoothConnect] != PermissionStatus.granted ||
-      statuses[Permission.locationWhenInUse] != PermissionStatus.granted) {
-    // 권한이 거부되었을 때 처리
-    throw Exception('필수 권한이 허용되지 않았습니다.');
-  }
-}
-
-  void _initBluetooth() async {
-  // 권한 요청 추가
-  await _requestPermissions();
-
-  _bluetoothState = await FlutterBluetoothSerial.instance.state;
-
-  if (_bluetoothState == BluetoothState.STATE_OFF) {
-    await FlutterBluetoothSerial.instance.requestEnable();
-  }
-
-  await _getBondedDevices();
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
-  /////////////////////////////////////////////////////////////////////////////////////
-  /////////////////////////////////////////////////////////////////////////////////////
 
   Future<void> _getBondedDevices() async {
     // Future<void>: 일반 void와 비교하자면 객체로서 반환 값을 처리 할 수 있음.
-    List<BluetoothDevice> bondedDevices =
-    await FlutterBluetoothSerial.instance.getBondedDevices();
+    List<BluetoothDevice> bondedDevices = await FlutterBluetoothSerial.instance.getBondedDevices();
 
     setState(() {
       // 이 함수는 자체적으로 다시 빌드 시킴
@@ -95,26 +90,26 @@ class _BluetoothSearchScreenState extends State<BluetoothSearchScreen> {
   }
 
   Future<void> _startDiscovery() async {
-  setState(() {
-    _isLoading = true;
-    _devicesList = [];
-  });
+    setState(() {
+      _isLoading = true;
+      _devicesList = [];
+    });
 
-  List<String> deviceAddresses = [];
-  FlutterBluetoothSerial.instance.startDiscovery().listen((r) {
-    setState(() {
-      // 장치가 이름이 있고 중복되지 않았을 때만 추가
-      if (r.device.name != null && !deviceAddresses.contains(r.device.address)) {
-        deviceAddresses.add(r.device.address);
-        _devicesList.add(r.device);
-      }
+    List<String> deviceAddresses = [];
+    FlutterBluetoothSerial.instance.startDiscovery().listen((r) {
+      setState(() {
+        // 장치가 이름이 있고 중복되지 않았을 때만 추가
+        if (r.device.name != null && !deviceAddresses.contains(r.device.address)) {
+          deviceAddresses.add(r.device.address);
+          _devicesList.add(r.device);
+        }
+      });
+    }).onDone(() {
+      setState(() {
+        _isLoading = false;
+      });
     });
-  }).onDone(() {
-    setState(() {
-      _isLoading = false;
-    });
-  });
-}
+  }
 
 
   Future<void> _cancelDiscovery() async {
@@ -174,13 +169,13 @@ class _BluetoothSearchScreenState extends State<BluetoothSearchScreen> {
     }
   }
 
+  //Bluetooth Search Screen UI 설정
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          '잠들지 않는 아침',
-          textAlign: TextAlign.center,
+          'Bluetooth',
         ),
         titleTextStyle: TextStyle(color: Colors.black),
         centerTitle: true,
@@ -192,7 +187,7 @@ class _BluetoothSearchScreenState extends State<BluetoothSearchScreen> {
             padding: EdgeInsets.all(16.0),
             child: ElevatedButton(
               onPressed: _isLoading ? _cancelDiscovery : _startDiscovery,
-              child: Text(_isLoading ? '검색 취소' : '블루투스 검색'),
+              child: Text(_isLoading ? '검색 취소' : '블루투스 스캔'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue[300],
               ),
@@ -233,6 +228,11 @@ class _BluetoothSearchScreenState extends State<BluetoothSearchScreen> {
     );
   }
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////
 
 class SendMessageScreen extends StatefulWidget {
   final BluetoothConnection connection;
@@ -331,14 +331,7 @@ class _SendMessageScreenState extends State<SendMessageScreen> {
   }
 }
 
-void main() {
-  runApp(MaterialApp(
-    home: BluetoothSearchScreen(),
-    theme: ThemeData(
-      primaryColor: Colors.yellow, // 앱 테마 색상 변경
-      textTheme: TextTheme(
-        bodyLarge: TextStyle(color: Colors.black), // 텍스트의 기본색 변경
-      ),
-    ),
-  ));
-}
+/////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////
