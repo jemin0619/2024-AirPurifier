@@ -1,6 +1,12 @@
 //https://esoog.tistory.com/entry/%ED%94%8C%EB%9F%AC%ED%84%B0flutter-%EB%B8%94%EB%A3%A8%ED%88%AC%EC%8A%A4bluetooth
 //flutter_bluetooth_serial 자료가 많지 않아 이 글을 토대로 코드를 수정하고 있습니다.
 
+//setstate가 많이 쓰이는 것을 알 수 있는데, 이는 StatefulWidget에서 변수를 변경하기 위한 명령어이다.
+//변수의 변화가 UI의 변화에 영향을 미칠 수 있게 해준다.
+
+//Future<>는 일정 시간이 지난 후 실제 데이터 값이나 에러를 반환한다.
+//Future<void>는 일정 시간 후에 값을 받아와서 처리해야 하는 경우 사용하는 것 같다.
+
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -28,22 +34,23 @@ class BluetoothSearchScreen extends StatefulWidget {
 class _BluetoothSearchScreenState extends State<BluetoothSearchScreen> {
   
   //BluetoochState는 총 5개의 state를 갖고 있다.
-  //BluetoothState.UNKNOWN: 블루투스 상태를 알 수 없다
-  //BluetoothState.STATE_OFF: 블루투스가 꺼져 있다
-  //BluetoothState.STATE_ON: 블루투스가 켜져 있다
-  //BluetoothState.STATE_TURNING_ON: 블루투스가 켜지고 있다
-  //BluetoothState.STATE_TURNING_OFF: 블루투스가 꺼지고 있다
+  //BluetoothState.UNKNOWN
+  //BluetoothState.STATE_OFF
+  //BluetoothState.STATE_ON
+  //BluetoothState.STATE_TURNING_ON
+  //BluetoothState.STATE_TURNING_OFF
   BluetoothState _bluetoothState = BluetoothState.UNKNOWN;
   List<BluetoothDevice> _devicesList = [];
   bool _isLoading = false;
   BluetoothConnection? _connection; // 타입?  nullable 타입을 나타냄.
-  
+
   @override
   void initState() { //StatefulWidget 생성시 한 번 실행되는 초기화 함수
     super.initState();
     _initBluetooth();
   }
 
+  
   //권한 확인 (스캔, 연결, 위치)
   Future<void> _requestPermissions() async {
     Map<Permission, PermissionStatus> statuses = await [
@@ -60,12 +67,11 @@ class _BluetoothSearchScreenState extends State<BluetoothSearchScreen> {
     }
   }
 
+  
+  //async로 비동기 처리
+  //결과를 기다리는 값들은 await로 비동기 처리
   void _initBluetooth() async {
-    //async로 비동기 처리
-    //결과를 기다리는 값들은 await로 비동기 처리
-
-    //권한 확인
-    await _requestPermissions();
+    await _requestPermissions(); //권한 확인
 
     //스마트폰에서 현재 블루투스의 상태를 가져온다. (상태들은 위에 설명해놓음)
     _bluetoothState = await FlutterBluetoothSerial.instance.state;
@@ -74,21 +80,19 @@ class _BluetoothSearchScreenState extends State<BluetoothSearchScreen> {
     if (_bluetoothState == BluetoothState.STATE_OFF) {
       await FlutterBluetoothSerial.instance.requestEnable();
     }
-  
     await _getBondedDevices();
   }
 
-
+  
+  //연결할 수 있는 디바이스를 리스트에 담고, setState로 _deviceList에 반영한다.
   Future<void> _getBondedDevices() async {
-    // Future<void>: 일반 void와 비교하자면 객체로서 반환 값을 처리 할 수 있음.
     List<BluetoothDevice> bondedDevices = await FlutterBluetoothSerial.instance.getBondedDevices();
-
     setState(() {
-      // 이 함수는 자체적으로 다시 빌드 시킴
       _devicesList = bondedDevices;
     });
   }
 
+  
   Future<void> _startDiscovery() async {
     setState(() {
       _isLoading = true;
@@ -114,18 +118,16 @@ class _BluetoothSearchScreenState extends State<BluetoothSearchScreen> {
 
   Future<void> _cancelDiscovery() async {
     await FlutterBluetoothSerial.instance.cancelDiscovery();
-
     setState(() {
       _isLoading = false;
     });
   }
 
+  
   Future<void> _connectToDevice(BluetoothDevice device) async {
     try {
       bool isConnected = await FlutterBluetoothSerial.instance.isConnected;
-      if (isConnected) {
-        await FlutterBluetoothSerial.instance.disconnect();
-      }
+      if (isConnected) await FlutterBluetoothSerial.instance.disconnect();
 
       // 페어링 중 메시지 표시
       showDialog(
