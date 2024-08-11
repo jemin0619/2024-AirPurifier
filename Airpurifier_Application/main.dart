@@ -1,3 +1,6 @@
+//https://esoog.tistory.com/entry/%ED%94%8C%EB%9F%AC%ED%84%B0flutter-%EB%B8%94%EB%A3%A8%ED%88%AC%EC%8A%A4bluetooth
+//flutter_bluetooth_serial 자료가 많지 않아 이 글을 토대로 코드를 수정하고 있습니다.
+
 import 'dart:convert';
 import 'dart:typed_data';
 
