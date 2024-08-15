@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "128369275382",
+    "project_id": "sht2024-za-airpurifier",
+    "storage_bucket": "sht2024-za-airpurifier.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:128369275382:android:2f6105b7d102b1881297d7",
+        "android_client_info": {
+          "package_name": "com.example.airpurifier_fin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDeWQoWQMlSBovPHB6p9-LT0HuyqC9UXR4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
