@@ -1,22 +1,15 @@
-#include "U8glib.h"
+#include "FirebaseESP8266.h"
+#include <U8g2lib.h>
+#include <ESP8266WiFi.h>
+#include <Wire.h>
+ 
+#define FIREBASE_HOST "_____" 
+#define FIREBASE_AUTH "_____"
+#define WIFI_SSID "_____" // 연결 가능한 wifi의 ssid
+#define WIFI_PASSWORD "_____" // wifi 비밀번호
 
+int driveState = 0; //Auto(0), Manual(1)
 int AirState = 1; // Current air quality: Good(1), Normal(2), Bad(3), Worst(4)
-int surrDistState = 0; // Distance to surroundings: Close(1), Adequate(0)
-
-typedef struct{
-  int echo;
-  int trig;
-  float getDist(){
-    float ret;
-    float cycletime;
-    digitalWrite(trig, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(trig, LOW);
-    cycletime = pulseIn(echo, HIGH);
-    ret = (cycletime * 0.0343) / 2;  // speed of sound is 0.0343 cm/us
-    return ret;
-  }
-} UltraS;
 
 typedef struct{
   int ENA;
@@ -26,13 +19,12 @@ typedef struct{
 
 typedef struct{
   int SIG;
-  long duration, start_time, ms=20000, low_pulse;
+  unsigned long duration=0, start_time=0, ms=10000, low_pulse=0;
   float ratio, concentration, value;
-
-  float getPPD42N(){
+  void getPPD42N(){
     duration=pulseIn(SIG, LOW);  //low_pulse 변수에 10번핀이 LOW된 시간을 모두 더함
     low_pulse += duration;
-    if(start_time+ms < millis()){  //3초에 한번씩 측정
+    if(start_time+ms < millis()){  //10초에 한번씩 측정
       start_time=millis();  //측정시간 초기화
       ratio=low_pulse/(ms*10.0);  //계산공식
       concentration=1.1*pow(ratio,3)-3.8*pow(ratio,2)+520*ratio+0.62;
@@ -40,73 +32,169 @@ typedef struct{
       low_pulse=0;  //low_pulse 변수 초기화
     }
   }
-
   void getAirState(){
     if (value <= 15.0) AirState=1;
     else if (value <= 35.0) AirState=2;
     else if (value <= 75.0) AirState=3;
     else AirState=4;
   }
-
 } PPD42N;
 
-UltraS my_us1, my_us2, my_us3;
 L298N my_l298n;
 PPD42N my_ppd42n;
+//U8GLIB_SH1106_128X64 u8g(U8G_I2C_OPT_NONE); //OLED 설정
+U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0);  // OLED 설정 <- 이걸로 해야 매 두 줄이 깨지지 않음
+//U8G2_SSD1306_128X64_ALT0_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);   // same as the NONAME variant, but may solve the "every 2nd line skipped" problem
 
-U8GLIB_SH1106_128X64 u8g(U8G_I2C_OPT_NONE); //OLED 설정
+FirebaseData firebaseData;
+FirebaseConfig config;
+FirebaseAuth auth;
 
-void getSurrDistState(){
-    if (my_us1.getDist() <= 15.0 || my_us2.getDist() <= 15.0 || my_us3.getDist() <= 15.0) surrDistState = 1;
-    else surrDistState = 0;
-}
+bool isConnected = true; //와이파이에 연결되어있는가?
 
-void setup() {
-  my_us1.echo = 22; my_us1.trig = 23;
-  my_us2.echo = 24; my_us2.trig = 25;
-  my_us3.echo = 26; my_us3.trig = 27;
+//파이어베이스에서 읽거나 쓸 데이터들
+bool Data_Auto = false;
+int Data_FanSpeed = 0;
+unsigned long long Data_FilterUsageDuration = 0;
+int Data_FineDustCondition = 0;
 
-  my_l298n.ENA = 7;
-  my_l298n.IN1 = 6;
-  my_l298n.IN2 = 5;
+//값을 특정 횟수 이상 읽어오지 못하면 연결이 끊긴 것으로 판단
+unsigned long Offset = 700;
+unsigned long Auto_start_time = 0;
+unsigned long FanSpeed_start_time = 0;
+unsigned long FilterUsageDuration_start_time = 0;
+int Failed_Auto_Cnt = 0;
+int Failed_FanSpeed_Cnt = 0;
 
-  my_ppd42n.SIG = 10;
+//1시간 카운트
+unsigned long timeCount = 0;
 
+void setup(){
   Serial.begin(9600);
-  u8g.setFont(u8g_font_7x13B);
-
-  pinMode(my_us1.echo, INPUT); pinMode(my_us2.echo, INPUT); pinMode(my_us3.echo, INPUT);
-  pinMode(my_us1.trig, OUTPUT); pinMode(my_us2.trig, OUTPUT); pinMode(my_us3.trig, OUTPUT);
-
-  pinMode(my_l298n.ENA, OUTPUT); pinMode(my_l298n.IN1, OUTPUT); pinMode(my_l298n.IN2, OUTPUT);
-
-  pinMode(my_ppd42n.SIG, INPUT);  //청색선을 입력선으로 10번핀에 연결
-  my_ppd42n.start_time = millis();  //시작된 시간을 측정
-
+  my_l298n.ENA=D6;
+  my_ppd42n.SIG=D5;
+  u8g2.begin();
+  pinMode(my_l298n.ENA, OUTPUT);
+  pinMode(my_ppd42n.SIG, INPUT);
+  my_ppd42n.start_time = millis();
+  timeCount = millis();
   delay(1000);
+
+  //20초 경과시 와이파이 연결을 포기함
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to WiFi");
+  int isTimeOut = 0;
+  while(WiFi.status() != WL_CONNECTED){
+    Serial.print(".");
+    isTimeOut++; delay(500);
+    if(isTimeOut>=40){isConnected = false; break;}
+  }
+
+  //와이파이에 연결되었을 시에만 파이어베이스에 연결
+  if(isConnected==true){ 
+    Serial.println(); Serial.print("Connected with IP: ");
+    Serial.println(WiFi.localIP()); Serial.println();
+    config.host = FIREBASE_HOST;
+    config.signer.tokens.legacy_token = FIREBASE_AUTH;
+    Firebase.begin(&config, &auth);
+    Firebase.reconnectWiFi(true);
+    firebaseData.setBSSLBufferSize(1024, 1024);
+    firebaseData.setResponseSize(1024);
+    Firebase.setReadTimeout(firebaseData, 1000 * 60);
+    Firebase.setwriteSizeLimit(firebaseData, "tiny");
+
+    if(Firebase.ready()) Serial.println("ready");
+    else isConnected = false;
+  }
+  if(isConnected==false){
+    Serial.println();
+    Serial.println("Can't Connect WiFi");
+    Serial.println("If you want to use the App to control, reboot the AirPurifier.");
+    Serial.println("The AirPurifier will be operated with Only Auto Mode");
+    Serial.println();
+  }
 }
 
-void loop() {
-  digitalWrite(my_l298n.IN1, LOW); digitalWrite(my_l298n.IN2, HIGH);
+void loop(){
+  
+  //파이어베이스에 연결된 상태에만 읽기 시작
+  if(isConnected){
+    //Auto 읽어오기
+    if(Auto_start_time+Offset < millis() && Firebase.getBool(firebaseData, "Auto")){
+      Data_Auto = firebaseData.boolData(); Failed_Auto_Cnt=0;
+      Auto_start_time = millis();
+    } else Failed_Auto_Cnt++;
 
-  getSurrDistState();
-  my_ppd42n.getPPD42N();
-  my_ppd42n.getAirState();
+    //FanSpeed 읽어오기
+    if(FanSpeed_start_time+Offset < millis() && Firebase.getInt(firebaseData, "FanSpeed")){
+      Data_FanSpeed = firebaseData.intData(); Failed_FanSpeed_Cnt=0;
+      FanSpeed_start_time = millis();
+    } else Failed_FanSpeed_Cnt++;
 
-  if(AirState==1) analogWrite(my_l298n.ENA, 100);
-  if(AirState==2) analogWrite(my_l298n.ENA, 150);
-  if(AirState==3) analogWrite(my_l298n.ENA, 200);
-  if(AirState==4) analogWrite(my_l298n.ENA, 255);
+    //현재 사용 기간 읽어오기 (시간 단위로 가져옴)
+    if(FilterUsageDuration_start_time+Offset < millis() && Firebase.getInt(firebaseData, "FilterUsingDuration")){
+      Data_FilterUsageDuration = firebaseData.intData();
+      FilterUsageDuration_start_time = millis();
+    }
+  }
 
-  u8g.firstPage();
-  do {
-    String tmp = "";
-    tmp.concat(my_ppd42n.value);
-    u8g.drawStr(20,10,tmp.c_str());
+  //일정 횟수 이상 데이터를 읽어오지 못하면 연결 상태가 끊겼다고 판단
+  if(Failed_Auto_Cnt>=10 || Failed_FanSpeed_Cnt>=10) isConnected = false;
 
-    if(AirState==1) u8g.drawStr(20, 50, "Good");
-    if(AirState==2) u8g.drawStr(20, 50, "Normal");
-    if(AirState==3) u8g.drawStr(20, 50, "Bad");
-    if(AirState==4) u8g.drawStr(20, 50, "Worst");
-  } while (u8g.nextPage());
+  my_ppd42n.getPPD42N(); //미세먼지 측정 후 ppd42n.value에 저장
+  my_ppd42n.getAirState(); //AirState에 현재 미세먼지 상태 저장 (1, 2, 3, 4)
+
+  String tmp = "";
+  tmp.concat(my_ppd42n.value);
+
+  if(!isConnected){ //연결이 되어있지 않다면 그 표시를 따로 해줘야됨
+    Data_Auto = true;
+    u8g2.drawStr(110, 15, "X");
+  }
+
+  //디스플레이 시작
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_7x13B_tf);
+
+  //미세먼지 농도 표시
+  u8g2.drawStr(25,15,"PM25");
+  u8g2.drawStr(65,15, tmp.c_str());
+
+  
+  //공기 질에 따라 상태 표시
+  if(AirState==1) u8g2.drawStr(33, 37, "Good");
+  if(AirState==2) u8g2.drawStr(30, 37, "Normal");
+  if(AirState==3) u8g2.drawStr(35, 37, "Bad");
+  if(AirState==4) u8g2.drawStr(30, 37, "Worst");
+
+  
+  if(Data_Auto==true){ //자동 모드 운전시
+    if(AirState==1) {analogWrite(my_l298n.ENA, 100); u8g2.drawStr(70, 37, "(1)");}
+    if(AirState==2) {analogWrite(my_l298n.ENA, 150); u8g2.drawStr(70, 37, "(2)");}
+    if(AirState==3) {analogWrite(my_l298n.ENA, 200); u8g2.drawStr(70, 37, "(3)");}
+    if(AirState==4) {analogWrite(my_l298n.ENA, 255); u8g2.drawStr(70, 37, "(4)");}
+    u8g2.drawStr(25, 60, "(Auto Mode)");
+  }
+
+  else if(Data_Auto==false){ //수동 모드 운전시
+    if(Data_FanSpeed==0) {analogWrite(my_l298n.ENA, 100); u8g2.drawStr(70, 37, "(1)");}
+    if(Data_FanSpeed==1) {analogWrite(my_l298n.ENA, 150); u8g2.drawStr(70, 37, "(2)");}
+    if(Data_FanSpeed==2) {analogWrite(my_l298n.ENA, 200); u8g2.drawStr(70, 37, "(3)");}
+    if(Data_FanSpeed==3) {analogWrite(my_l298n.ENA, 255); u8g2.drawStr(70, 37, "(4)");}
+    u8g2.drawStr(18, 60, "(Manual Mode)");
+  }
+  
+  if(isConnected){
+    //미세먼지 상태 전송
+    Data_FineDustCondition = (int)(my_ppd42n.value); 
+    Firebase.setInt(firebaseData, "FineDustCondition", Data_FineDustCondition);
+
+    //1시간 지날때마다 카운트
+    if(timeCount+3600000 < millis()){
+      Firebase.setInt(firebaseData, "FilterUsingDuration", Data_FilterUsageDuration + 1);
+      timeCount = millis();
+    }
+  }
+  
+  u8g2.sendBuffer();
 }
