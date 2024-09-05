@@ -3,10 +3,10 @@
 #include <ESP8266WiFi.h>
 #include <Wire.h>
  
-#define FIREBASE_HOST "_____" 
-#define FIREBASE_AUTH "_____"
-#define WIFI_SSID "_____" // 연결 가능한 wifi의 ssid
-#define WIFI_PASSWORD "_____" // wifi 비밀번호
+#define FIREBASE_HOST "____" 
+#define FIREBASE_AUTH "____"
+#define WIFI_SSID "____" // 연결 가능한 wifi의 ssid
+#define WIFI_PASSWORD "____" // wifi 비밀번호
 
 int driveState = 0; //Auto(0), Manual(1)
 int AirState = 1; // Current air quality: Good(1), Normal(2), Bad(3), Worst(4)
@@ -147,11 +147,6 @@ void loop(){
   String tmp = "";
   tmp.concat(my_ppd42n.value);
 
-  if(!isConnected){ //연결이 되어있지 않다면 그 표시를 따로 해줘야됨
-    Data_Auto = true;
-    u8g2.drawStr(110, 15, "X");
-  }
-
   //디스플레이 시작
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_7x13B_tf);
@@ -160,6 +155,13 @@ void loop(){
   u8g2.drawStr(25,15,"PM25");
   u8g2.drawStr(65,15, tmp.c_str());
 
+  //2024.09.05 : 이거를 clearbuffer 전에 넣으면 문제가 생기는 것 같음 (확실 X)
+  //와이파이 연결을 안한 상태로 loop에 진입했을 때 문제가 있었는데 해결됨 
+  //아마 이 코드가 원인이었을 것으로 추측하는데, 그냥 된 것일수도 있고, 확실하진 않음 
+  if(!isConnected){ //연결이 되어있지 않다면 그 표시를 따로 해줘야됨
+    Data_Auto = true;
+    u8g2.drawStr(110, 15, "X");
+  }
   
   //공기 질에 따라 상태 표시
   if(AirState==1) u8g2.drawStr(33, 37, "Good");
