@@ -70,6 +70,8 @@ int Failed_FanSpeed_Cnt = 0;
 unsigned long timeCount = 0;
 
 void setup(){
+  pinMode(D4, INPUT);
+  pinMode(D7, INPUT);
   Serial.begin(9600);
   my_l298n.ENA=D6;
   my_ppd42n.SIG=D5;
@@ -115,10 +117,26 @@ void setup(){
   }
 }
 
+int sw_flag[2] = {0, 0};
+bool SW_MODE = false;
+int SW_MODE_Speed = 0;
+
 void loop(){
-  
+  //스위치 모드 ON/OFF
+  if(sw_flag[0]==0 && digitalRead(D4)==0){
+    sw_flag[0] = 1;
+    SW_MODE = !SW_MODE;
+  } else if(digitalRead(D4)==1) sw_flag[0] = 0;
+
+  if(sw_flag[1]==0 && digitalRead(D7)==0){
+    sw_flag[1] = 1;
+    if(SW_MODE){
+      SW_MODE_Speed = (SW_MODE_Speed+1)%4;
+    }
+  } else if(digitalRead(D7)==1) sw_flag[1] = 0;
+
   //파이어베이스에 연결된 상태에만 읽기 시작
-  if(isConnected){
+  if(isConnected && !SW_MODE){
     //Auto 읽어오기
     if(Auto_start_time+Offset < millis() && Firebase.getBool(firebaseData, "Auto")){
       Data_Auto = firebaseData.boolData(); Failed_Auto_Cnt=0;
@@ -169,8 +187,15 @@ void loop(){
   if(AirState==3) u8g2.drawStr(35, 37, "Bad");
   if(AirState==4) u8g2.drawStr(30, 37, "Worst");
 
-  
-  if(Data_Auto==true){ //자동 모드 운전시
+  if(SW_MODE==true){
+    if(SW_MODE_Speed==0) {analogWrite(my_l298n.ENA, 100); u8g2.drawStr(70, 37, "(1)");}
+    if(SW_MODE_Speed==1) {analogWrite(my_l298n.ENA, 150); u8g2.drawStr(70, 37, "(2)");}
+    if(SW_MODE_Speed==2) {analogWrite(my_l298n.ENA, 200); u8g2.drawStr(70, 37, "(3)");}
+    if(SW_MODE_Speed==3) {analogWrite(my_l298n.ENA, 255); u8g2.drawStr(70, 37, "(4)");}
+    u8g2.drawStr(18, 60, "(Button Mode)");
+  }
+
+  else if(SW_MODE==false && Data_Auto==true){ //자동 모드 운전시
     if(AirState==1) {analogWrite(my_l298n.ENA, 100); u8g2.drawStr(70, 37, "(1)");}
     if(AirState==2) {analogWrite(my_l298n.ENA, 150); u8g2.drawStr(70, 37, "(2)");}
     if(AirState==3) {analogWrite(my_l298n.ENA, 200); u8g2.drawStr(70, 37, "(3)");}
@@ -178,12 +203,12 @@ void loop(){
     u8g2.drawStr(25, 60, "(Auto Mode)");
   }
 
-  else if(Data_Auto==false){ //수동 모드 운전시
+  else if(SW_MODE==false && Data_Auto==false){ //수동 모드 운전시
     if(Data_FanSpeed==0) {analogWrite(my_l298n.ENA, 100); u8g2.drawStr(70, 37, "(1)");}
     if(Data_FanSpeed==1) {analogWrite(my_l298n.ENA, 150); u8g2.drawStr(70, 37, "(2)");}
     if(Data_FanSpeed==2) {analogWrite(my_l298n.ENA, 200); u8g2.drawStr(70, 37, "(3)");}
     if(Data_FanSpeed==3) {analogWrite(my_l298n.ENA, 255); u8g2.drawStr(70, 37, "(4)");}
-    u8g2.drawStr(18, 60, "(Manual Mode)");
+    u8g2.drawStr(18, 60, "(Online Mode)");
   }
   
   if(isConnected){
